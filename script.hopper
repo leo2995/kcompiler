@@ -1,0 +1,7 @@
+program { 
+    function sum(a, b) {
+        integer x = 30;
+    }
+
+    sum(10, 20);
+} 
