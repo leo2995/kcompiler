@@ -1,5 +1,6 @@
 module GO-SYNTAX
 import DOMAINS
+
 syntax pgm ::= "func main()" "{" Block "}" 
 
 syntax Skip ::= "Skip"
@@ -16,11 +17,17 @@ syntax Stmt ::= "if" "(" BExp ")" Block [strict(1)]
                 | AExp
                 | DecVar ";"
                 | FuncDec
-                | FuncCall ";"
+                | FuncCall
                 | Assigner
                 | AExpMod
                 | Skip
                 | Stmt Stmt [left]
+
+syntax Values ::= List{Int, ","}
+syntax Params ::= List{Id, ","}
+syntax FuncDec ::= "func" Id "(" Params ")" Block
+syntax FuncCall ::= Id "(" Values ")"
+syntax Local ::= "local" "("Id "," Stmt ")"
 
 syntax ElseIfStmt ::= "else" "if" "(" BExp ")" Block
                         | "else" Block
@@ -34,6 +41,12 @@ syntax BExp ::= Bool
                     | AExp "==" AExp [strict]
                     | AExp "!=" Aexp [strict]
                     | "(" BExp ")"   [bracket]
+
+syntax SExp ::= String
+                |SExp "+" SExp {seqstrict. left}
+                |Id
+
+rule S1:String + S2:String S1 => S1 +String S2
 
 
 syntax AExpMod ::= Id "++" 
@@ -87,9 +100,7 @@ rule for(var I:Id = V:AExp ; B:BExp ; Amod:AExpMod) {S} => I=V ~> forp1 (B) { S 
     rule I1:Int > I2:Int => I1 >Int I2
     rule I1:Int == I2:Int => I1 ==Int I2
     rule I1:Int != I2:Int => I1 !=Int I2
-        //rule I1:Id + I2 => I1 ~> I1 + I2
-    //rule I:Int ~> I1:Id + I2 => I + I2
-    //rule I1:Int + I2:Id => I2 ~> I1 + I2
+    
 
         rule if (true) {S:Stmt} => S
         rule if (false) {_} => Skip
@@ -109,7 +120,9 @@ rule for(var I:Id = V:AExp ; B:BExp ; Amod:AExpMod) {S} => I=V ~> forp1 (B) { S 
 // executar o programa
         rule func main () {B:Block} => B [structural]
 // dec mais de uma variavel
-        rule S1:Stmt S2:Block => S1 ~> S2
+        rule S1:Stmt S2:Stmt => S1 ~> S2
+//dentro de uma funcao
+        rule local(I:Id, S1:Stmt S2:Stmt) => local(I, S1) ~> local(I, S2)
 
 // decvar default INT
         rule <K> var I:Id T:Type  => Skip ... </K>
@@ -192,13 +205,70 @@ rule .Ids = _:Bool => Skip
             <env> ... I |-> L ... </env>
             <store> ... L |-> (v =>V -Int 1) ... </store>
 
+//instanciando celulas da configuração/ salvar id e escopo /funcao/declaracao
+            rule <k> func I:Id (P:Params) { S:Stmt } => Skip ... </k>
+            (.Bag => <thread>
+                <Id> I </Id>
+                <scope> S </scope>
+                <params> P </params>
+                <temp> P </temp>
+                <localEnv> .Map </localEnv>
+                 </thread>
+            
+            )
+                <functions> M:Map => M I |-> S </functions>
+
+//resolvendo a funcao variaveis locais/ chamada da funcao e seu escopo/chamada
+        rule <k> I:Id (.Values)  => local(I, S) ... </k>
+        <thread>
+        ...
+        <Id> I </Id>
+        <scope> S:Stmt </scope>
+        <params> P </params>
+         <temp> (.Params =>P) </temp>
+        ...
+        </thread>
+
+        rule <k> I:Id ((V:Int,Vs:Values))  => I:Id (Vs) ... </k>
+        <thread>
+        ...
+        <Id> I </Id>
+        <temp> (P:Id, Ps:params => Ps) </temp>
+        <localEnv> M:Map => M P |-> L </localEnv>
+        ...
+        </thread>
+        <store> SMap:Map => SMap L |-> V </store>
+        <loc> L => L +Int 1 </loc>
+
+//replicar para bool e string / resolvendo a parte de local e global
+        rule <k> local(FuncId:Id, var I:Id = V:Int)  => Skip ... </k>
+             rule <k> I:Id ()  => local(I, S) ... </k>
+        <thread>
+        ...
+        <Id> FuncId </Id>
+        <localEnv> M:Map => M I |-> L </localEnv>
+        ...
+        </thread>
+        <store> SMap:Map => SMap L |-> V </store>
+        <loc> L => L +Int 1 </loc>
+
+
             
 
 
 //começo programa
         configuration <T> 
         <K>$PGM:Pgm</K>
-        <env> .Map </env>
+       <functions color="orange">
+        <thread multiplicity="*" color="blue"> 
+        <Id> .K </Id>
+        <scope> .K </scope>
+        <params> .K </params>
+        <temp> .K </temp>
+        <localEnv> .Map </localEnv>
+        </thread>
+        </functions>
+         <env> .Map </env>
         <store>.Map</store>
          <loc> 1 </loc>
         </T>
